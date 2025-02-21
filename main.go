@@ -14,6 +14,8 @@ import (
 	"sync"
 )
 
+// to read: /Users/danut/go/pkg/mod/github.com/pkg/sftp@v1.13.7/request-example.go
+
 func main() {
 	ps := &pipes{m: make(map[string]*streamFile)}
 
@@ -153,11 +155,35 @@ func (r *myFileReader) Fileread(req *sftp.Request) (io.ReaderAt, error) {
 	return nil, os.ErrPermission // or a custom error
 }
 
+type listerat []os.FileInfo
+
+// Modeled after strings.Reader's ReadAt() implementation
+func (f listerat) ListAt(ls []os.FileInfo, offset int64) (int, error) {
+	var n int
+	if offset >= int64(len(f)) {
+		return 0, io.EOF
+	}
+	n = copy(ls, f[offset:])
+	if n < len(ls) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
 // FileLister: we *deny* directory listings (ls).
 type myFileLister struct{}
 
 func (l *myFileLister) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
-	return nil, os.ErrPermission
+	switch request.Method {
+	case "Stat":
+		file, err := os.Stat(".")
+		if err != nil {
+			return nil, err
+		}
+		return listerat{file}, nil
+	}
+
+	return nil, errors.New("unsupported")
 }
 
 // FileCmder: we *deny* rename, link, symlink, etc.
@@ -277,6 +303,7 @@ func handleSession(channel ssh.Channel, in <-chan *ssh.Request, sf *streamFile) 
 
 				// Start SFTP server
 				sftpServer := sftp.NewRequestServer(channel, handlers)
+				//sftpServer, _ := sftp.NewServer(channel)
 
 				// Serve blocks until EOF or error
 				if err := sftpServer.Serve(); err == io.EOF {
