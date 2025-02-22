@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/danutavadanei/portl"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"io"
@@ -16,8 +17,13 @@ import (
 
 // to read: /Users/danut/go/pkg/mod/github.com/pkg/sftp@v1.13.7/request-example.go
 
+type pipes struct {
+	mu sync.Mutex
+	m  map[string]*portl.Stream
+}
+
 func main() {
-	ps := &pipes{m: make(map[string]*streamFile)}
+	ps := &pipes{m: make(map[string]*portl.Stream)}
 
 	go func() {
 		if err := runSshServer(ps); err != nil {
@@ -47,64 +53,30 @@ func runHttpServer(ps *pipes) error {
 			return
 		}
 
-		sf.ReadHTTP(w)
+		for msg := range sf.Msgs {
+			switch msg.MsgType {
+			case portl.OpenFile:
+				log.Printf("Opening file: %s", msg.Path)
+				// open file
+			case portl.WriteFile:
+				log.Printf("Writing file: %s", msg.Path)
+				// write file
+				// Simple loop: read chunk from dataChan, write to response
+				for data := range msg.Data {
+					if _, err := w.Write(data); err != nil {
+						log.Printf("HTTP write error: %v", err)
+						return
+					}
+				}
+			}
+		}
+
 	})
 
 	return http.ListenAndServe("127.0.0.1:8090", mux)
 }
 
-// streamFile is the "bridge" between SFTP writes and HTTP reads.
-type streamFile struct {
-	mu            sync.Mutex
-	currentOffset int64
-	dataChan      chan []byte   // SFTP side pushes chunks here
-	doneChan      chan struct{} // signals end-of-upload or abort
-	closed        bool
-	fileName      string
-}
-
-// newStreamFile creates the pipeline with unbuffered channels
-func newStreamFile() *streamFile {
-	return &streamFile{
-		dataChan: make(chan []byte),
-		doneChan: make(chan struct{}),
-	}
-}
-
-// WriteAt is called by the SFTP server code whenever the client sends file data.
-// We assume sequential writes: offset must match currentOffset, or we return error.
-func (sf *streamFile) WriteAt(p []byte, off int64) (n int, err error) {
-	sf.mu.Lock()
-	defer sf.mu.Unlock()
-
-	if sf.closed {
-		return 0, errors.New("write on closed streamFile")
-	}
-	if off != sf.currentOffset {
-		return 0, errors.New("non-sequential writes not supported in streaming mode")
-	}
-	sf.currentOffset += int64(len(p))
-
-	// Send chunk to dataChan
-	// If no HTTP reader is connected yet, this blocks until it starts reading.
-	chunkCopy := make([]byte, len(p))
-	copy(chunkCopy, p) // to avoid reusing p
-	sf.dataChan <- chunkCopy
-	return len(p), nil
-}
-
-// Close signals that the SFTP upload is finished or aborted.
-func (sf *streamFile) Close() error {
-	sf.mu.Lock()
-	defer sf.mu.Unlock()
-	if !sf.closed {
-		sf.closed = true
-		close(sf.doneChan)
-		close(sf.dataChan)
-	}
-	return nil
-}
-
+/*
 func (sf *streamFile) ReadHTTP(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")
@@ -129,14 +101,10 @@ func (sf *streamFile) ReadHTTP(w http.ResponseWriter) {
 		}
 	}
 }
-
-type pipes struct {
-	mu sync.Mutex
-	m  map[string]*streamFile
-}
+*/
 
 type myFileWriter struct {
-	sf *streamFile
+	s *portl.Stream
 }
 
 func (w *myFileWriter) Filewrite(req *sftp.Request) (io.WriterAt, error) {
@@ -145,7 +113,7 @@ func (w *myFileWriter) Filewrite(req *sftp.Request) (io.WriterAt, error) {
 	}
 
 	log.Printf("Receiving upload for path: %s (method=%s)", req.Filepath, req.Method)
-	return w.sf, nil
+	return w.s.WriteFile(req.Filepath), nil
 }
 
 // FileReader: we *deny* reads (so GET/download won't work).
@@ -210,7 +178,7 @@ func runSshServer(ps *pipes) error {
 			sessionID := fmt.Sprintf("%x", hash.Sum(nil))
 
 			ps.mu.Lock()
-			ps.m[sessionID] = newStreamFile()
+			ps.m[sessionID] = portl.NewStream()
 			ps.mu.Unlock()
 
 			// This string is sent to the SSH client before authentication
@@ -282,8 +250,9 @@ func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, ps *pipes
 		go handleSession(channel, requests, sf)
 	}
 }
-func handleSession(channel ssh.Channel, in <-chan *ssh.Request, sf *streamFile) {
+func handleSession(channel ssh.Channel, in <-chan *ssh.Request, s *portl.Stream) {
 	defer channel.Close()
+	defer s.Close()
 
 	for req := range in {
 		switch req.Type {
@@ -296,7 +265,7 @@ func handleSession(channel ssh.Channel, in <-chan *ssh.Request, sf *streamFile) 
 
 				handlers := sftp.Handlers{
 					FileGet:  &myFileReader{},
-					FilePut:  &myFileWriter{sf: sf},
+					FilePut:  &myFileWriter{s: s},
 					FileCmd:  &myFileCmd{},
 					FileList: &myFileLister{},
 				}
