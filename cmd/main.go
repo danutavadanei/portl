@@ -1,10 +1,11 @@
 package main
 
 import (
+	"archive/zip"
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"github.com/danutavadanei/portl"
+	"github.com/danutavadanei/portl/broker"
+	sftpext "github.com/danutavadanei/portl/sftp"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"io"
@@ -13,26 +14,20 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
-// to read: /Users/danut/go/pkg/mod/github.com/pkg/sftp@v1.13.7/request-example.go
-
-type pipes struct {
-	mu sync.Mutex
-	m  map[string]*portl.Stream
-}
-
 func main() {
-	ps := &pipes{m: make(map[string]*portl.Stream)}
+	brokers := sync.Map{}
 
 	go func() {
-		if err := runSshServer(ps); err != nil {
+		if err := runSshServer(&brokers); err != nil {
 			log.Fatalf("Failed to run SSH server: %v", err)
 		}
 	}()
 
 	go func() {
-		if err := runHttpServer(ps); err != nil {
+		if err := runHttpServer(&brokers); err != nil {
 			log.Fatalf("Failed to run HTTP server: %v", err)
 		}
 	}()
@@ -40,128 +35,71 @@ func main() {
 	select {}
 }
 
-func runHttpServer(ps *pipes) error {
+func runHttpServer(brokers *sync.Map) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/{id}/", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		ps.mu.Lock()
-		sf, ok := ps.m[id]
-		ps.mu.Unlock()
+
+		// get broker for this session
+		b, ok := brokers.Load(id)
 		if !ok {
 			http.Error(w, "Session ID not found", http.StatusNotFound)
 			return
 		}
 
-		for msg := range sf.Msgs {
-			switch msg.MsgType {
-			case portl.OpenFile:
-				log.Printf("Opening file: %s", msg.Path)
-				// open file
-			case portl.WriteFile:
+		msgs, err := b.(broker.Broker).Subscribe()
+		if err != nil {
+			http.Error(w, "Failed to subscribe to broker", http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.zip", id))
+
+		zw := zip.NewWriter(w)
+		defer zw.Close()
+
+		for msg := range msgs {
+			switch msg.Type {
+			case broker.Mkdir:
+				log.Printf("Creating directory: %s", msg.Path)
+				header := &zip.FileHeader{
+					Name:     msg.Path + "/",
+					Method:   zip.Store,
+					Modified: time.Now(),
+				}
+				if _, err := zw.CreateHeader(header); err != nil {
+					log.Printf("failed to write zip header for mkdir %s: %s", msg.Path, err)
+					return
+				}
+			case broker.Put:
 				log.Printf("Writing file: %s", msg.Path)
-				// write file
-				// Simple loop: read chunk from dataChan, write to response
+				header := &zip.FileHeader{
+					Name:     msg.Path,
+					Method:   zip.Store,
+					Modified: time.Now(),
+				}
+
+				iw, err := zw.CreateHeader(header)
+				if err != nil {
+					log.Printf("failed to write tar header for put %s: %s", msg.Path, err)
+					return
+				}
+
 				for data := range msg.Data {
-					if _, err := w.Write(data); err != nil {
-						log.Printf("HTTP write error: %v", err)
+					if _, err := iw.Write(data); err != nil {
+						log.Printf("failed to write data for put %s: %s", msg.Path, err)
 						return
 					}
 				}
 			}
 		}
-
 	})
 
 	return http.ListenAndServe("127.0.0.1:8090", mux)
 }
 
-/*
-func (sf *streamFile) ReadHTTP(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", sf.fileName))
-
-	// Simple loop: read chunk from dataChan, write to response
-	for {
-		select {
-		case chunk, ok := <-sf.dataChan:
-			if !ok {
-				// dataChan closed, so SFTP upload ended
-				return
-			}
-			if _, err := w.Write(chunk); err != nil {
-				log.Printf("HTTP write error: %v", err)
-				return
-			}
-
-		case <-sf.doneChan:
-			// If doneChan is closed, we're finished
-			return
-		}
-	}
-}
-*/
-
-type myFileWriter struct {
-	s *portl.Stream
-}
-
-func (w *myFileWriter) Filewrite(req *sftp.Request) (io.WriterAt, error) {
-	if req.Method != "Put" {
-		return nil, os.ErrPermission
-	}
-
-	log.Printf("Receiving upload for path: %s (method=%s)", req.Filepath, req.Method)
-	return w.s.WriteFile(req.Filepath), nil
-}
-
-// FileReader: we *deny* reads (so GET/download won't work).
-type myFileReader struct{}
-
-func (r *myFileReader) Fileread(req *sftp.Request) (io.ReaderAt, error) {
-	return nil, os.ErrPermission // or a custom error
-}
-
-type listerat []os.FileInfo
-
-// Modeled after strings.Reader's ReadAt() implementation
-func (f listerat) ListAt(ls []os.FileInfo, offset int64) (int, error) {
-	var n int
-	if offset >= int64(len(f)) {
-		return 0, io.EOF
-	}
-	n = copy(ls, f[offset:])
-	if n < len(ls) {
-		return n, io.EOF
-	}
-	return n, nil
-}
-
-// FileLister: we *deny* directory listings (ls).
-type myFileLister struct{}
-
-func (l *myFileLister) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
-	switch request.Method {
-	case "Stat":
-		file, err := os.Stat(".")
-		if err != nil {
-			return nil, err
-		}
-		return listerat{file}, nil
-	}
-
-	return nil, errors.New("unsupported")
-}
-
-// FileCmder: we *deny* rename, link, symlink, etc.
-type myFileCmd struct{}
-
-func (c *myFileCmd) Filecmd(req *sftp.Request) error {
-	return nil
-}
-
-func runSshServer(ps *pipes) error {
+func runSshServer(brokers *sync.Map) error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 			// nothing for now
@@ -172,17 +110,11 @@ func runSshServer(ps *pipes) error {
 			return nil, nil
 		},
 		BannerCallback: func(conn ssh.ConnMetadata) string {
-			// hash the session id using sha256
-			hash := sha256.New()
-			hash.Write(conn.SessionID())
-			sessionID := fmt.Sprintf("%x", hash.Sum(nil))
+			sessionID := hashSessionID(conn)
 
-			ps.mu.Lock()
-			ps.m[sessionID] = portl.NewStream()
-			ps.mu.Unlock()
+			brokers.Store(sessionID, broker.NewInMemoryBroker())
 
-			// This string is sent to the SSH client before authentication
-			return fmt.Sprintf("Welcome to my SSH server. Your session ID is %s\n", sessionID)
+			return fmt.Sprintf("http://127.0.0.1:8090/%s/\n", sessionID)
 		},
 	}
 
@@ -211,11 +143,11 @@ func runSshServer(ps *pipes) error {
 			log.Printf("Failed to accept incoming connection: %v", err)
 			continue
 		}
-		go handleIncomingSshConnection(conn, cfg, ps)
+		go handleIncomingSshConnection(conn, cfg, brokers)
 	}
 }
 
-func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, ps *pipes) {
+func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, brokers *sync.Map) {
 	shConn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
 		log.Printf("Failed to handshake: %v", err)
@@ -237,20 +169,23 @@ func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, ps *pipes
 			return
 		}
 
-		// Get the session ID
-		hash := sha256.New()
-		hash.Write(shConn.SessionID())
-		sessionID := fmt.Sprintf("%x", hash.Sum(nil))
-		sf, ok := ps.m[sessionID]
+		sessionID := hashSessionID(shConn)
+
+		b, ok := brokers.Load(sessionID)
 		if !ok {
 			log.Printf("Session ID not found in pipes")
 			return
 		}
 
-		go handleSession(channel, requests, sf)
+		// block here as we don't want to handle multiple sessions concurrently
+		handleSession(channel, requests, b.(broker.Broker))
+
+		// we are done with this broker, it should never be used again
+		brokers.Delete(sessionID)
 	}
 }
-func handleSession(channel ssh.Channel, in <-chan *ssh.Request, s *portl.Stream) {
+
+func handleSession(channel ssh.Channel, in <-chan *ssh.Request, s broker.Broker) {
 	defer channel.Close()
 	defer s.Close()
 
@@ -259,22 +194,19 @@ func handleSession(channel ssh.Channel, in <-chan *ssh.Request, s *portl.Stream)
 		case "subsystem":
 			subsystem := parseSubsystem(req.Payload)
 			if subsystem == "sftp" {
-				// Accept the request
-				req.Reply(true, []byte("Hello World!"))
 				log.Println("Starting SFTP subsystem")
 
+				handler := sftpext.NewHandler(s)
+
 				handlers := sftp.Handlers{
-					FileGet:  &myFileReader{},
-					FilePut:  &myFileWriter{s: s},
-					FileCmd:  &myFileCmd{},
-					FileList: &myFileLister{},
+					FileGet:  handler,
+					FilePut:  handler,
+					FileCmd:  handler,
+					FileList: handler,
 				}
 
-				// Start SFTP server
 				sftpServer := sftp.NewRequestServer(channel, handlers)
-				//sftpServer, _ := sftp.NewServer(channel)
 
-				// Serve blocks until EOF or error
 				if err := sftpServer.Serve(); err == io.EOF {
 					log.Println("SFTP client exited session.")
 				} else if err != nil {
@@ -305,4 +237,10 @@ func parseSubsystem(payload []byte) string {
 		return ""
 	}
 	return string(payload[4 : 4+length])
+}
+
+func hashSessionID(conn ssh.ConnMetadata) string {
+	hash := sha256.New()
+	hash.Write(conn.SessionID())
+	return fmt.Sprintf("%x", hash.Sum(nil))
 }
