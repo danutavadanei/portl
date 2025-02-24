@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/danutavadanei/portl/broker"
 	"github.com/danutavadanei/portl/common"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -20,7 +21,7 @@ func stream(sm *common.SessionManager) http.HandlerFunc {
 			return
 		}
 
-		msgs, err := b.(broker.Broker).Subscribe()
+		msgs, err := b.Subscribe()
 		if err != nil {
 			http.Error(w, "Failed to subscribe to broker", http.StatusInternalServerError)
 		}
@@ -58,11 +59,9 @@ func stream(sm *common.SessionManager) http.HandlerFunc {
 					return
 				}
 
-				for data := range msg.Data {
-					if _, err := iw.Write(data); err != nil {
-						log.Printf("failed to write data for put %s: %s", msg.Path, err)
-						return
-					}
+				if _, err := io.Copy(iw, msg.Data); err != nil {
+					log.Printf("failed to write data for put %s: %s", msg.Path, err)
+					return
 				}
 			}
 		}

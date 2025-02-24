@@ -1,10 +1,13 @@
 package sftp
 
-import "errors"
+import (
+	"errors"
+	"io"
+)
 
 type writerAt struct {
 	offset int64
-	data   chan []byte
+	pw     *io.PipeWriter
 }
 
 func (w *writerAt) WriteAt(p []byte, off int64) (n int, err error) {
@@ -12,11 +15,9 @@ func (w *writerAt) WriteAt(p []byte, off int64) (n int, err error) {
 		return 0, errors.New("non-sequential writes not supported in streaming mode")
 	}
 	w.offset += int64(len(p))
-	w.data <- p
-	return len(p), nil
+	return w.pw.Write(p)
 }
 
 func (w *writerAt) Close() error {
-	close(w.data)
-	return nil
+	return w.pw.Close()
 }

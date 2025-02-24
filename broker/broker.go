@@ -1,5 +1,7 @@
 package broker
 
+import "io"
+
 type MessageType int
 
 const (
@@ -10,7 +12,7 @@ const (
 type Message struct {
 	Type MessageType
 	Path string
-	Data chan []byte
+	Data io.ReadCloser
 }
 
 type Broker interface {

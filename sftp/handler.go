@@ -25,17 +25,17 @@ func (sh *Handler) Filewrite(req *sftp.Request) (io.WriterAt, error) {
 		return nil, nil
 	}
 
-	data := make(chan []byte)
+	pr, pw := io.Pipe()
 
 	if err := sh.mb.Publish(broker.Message{
 		Type: broker.Put,
 		Path: sh.normalizePath(req.Filepath),
-		Data: data,
+		Data: pr,
 	}); err != nil {
 		return nil, err
 	}
 
-	return &writerAt{data: data}, nil
+	return &writerAt{pw: pw}, nil
 }
 
 func (sh *Handler) Fileread(*sftp.Request) (io.ReaderAt, error) {
