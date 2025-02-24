@@ -41,7 +41,7 @@ func (b *InMemoryBroker) Subscribe() (<-chan Message, error) {
 		return nil, errors.New("broker: consumer already subscribed")
 	}
 
-	b.consumerChan = make(chan Message, 24)
+	b.consumerChan = make(chan Message)
 	b.consumerActive = true
 
 	for _, msg := range b.queue {
@@ -53,25 +53,12 @@ func (b *InMemoryBroker) Subscribe() (<-chan Message, error) {
 	return b.consumerChan, nil
 }
 
-func (b *InMemoryBroker) Unsubscribe() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if !b.consumerActive {
-		return errors.New("broker: no consumer to unsubscribe")
-	}
-
-	close(b.consumerChan)
-	b.consumerChan = nil
-	b.consumerActive = false
-	return nil
-}
-
 func (b *InMemoryBroker) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	close(b.consumerChan)
+	b.consumerChan = nil
 
 	return nil
 }

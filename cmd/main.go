@@ -1,105 +1,46 @@
 package main
 
 import (
-	"archive/zip"
 	"crypto/sha256"
 	"fmt"
 	"github.com/danutavadanei/portl/broker"
+	"github.com/danutavadanei/portl/common"
+	"github.com/danutavadanei/portl/http"
 	sftpext "github.com/danutavadanei/portl/sftp"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
-	"sync"
-	"time"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
-	brokers := sync.Map{}
+	sigChannel := make(chan os.Signal)
+	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
+
+	brokers := common.NewSessionManager()
+
+	httpSrv := http.NewServer(brokers, "127.0.0.1:8090")
 
 	go func() {
-		if err := runSshServer(&brokers); err != nil {
-			log.Fatalf("Failed to run SSH server: %v", err)
-		}
-	}()
-
-	go func() {
-		if err := runHttpServer(&brokers); err != nil {
+		if err := httpSrv.ListenAndServe(); err != nil {
 			log.Fatalf("Failed to run HTTP server: %v", err)
 		}
 	}()
 
-	select {}
+	go func() {
+		if err := runSshServer(brokers); err != nil {
+			log.Fatalf("Failed to run SSH server: %v", err)
+		}
+	}()
+
+	<-sigChannel
 }
 
-func runHttpServer(brokers *sync.Map) error {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/{id}/", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-
-		// get broker for this session
-		b, ok := brokers.Load(id)
-		if !ok {
-			http.Error(w, "Session ID not found", http.StatusNotFound)
-			return
-		}
-
-		msgs, err := b.(broker.Broker).Subscribe()
-		if err != nil {
-			http.Error(w, "Failed to subscribe to broker", http.StatusInternalServerError)
-		}
-
-		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.zip", id))
-
-		zw := zip.NewWriter(w)
-		defer zw.Close()
-
-		for msg := range msgs {
-			switch msg.Type {
-			case broker.Mkdir:
-				log.Printf("Creating directory: %s", msg.Path)
-				header := &zip.FileHeader{
-					Name:     msg.Path + "/",
-					Method:   zip.Store,
-					Modified: time.Now(),
-				}
-				if _, err := zw.CreateHeader(header); err != nil {
-					log.Printf("failed to write zip header for mkdir %s: %s", msg.Path, err)
-					return
-				}
-			case broker.Put:
-				log.Printf("Writing file: %s", msg.Path)
-				header := &zip.FileHeader{
-					Name:     msg.Path,
-					Method:   zip.Store,
-					Modified: time.Now(),
-				}
-
-				iw, err := zw.CreateHeader(header)
-				if err != nil {
-					log.Printf("failed to write tar header for put %s: %s", msg.Path, err)
-					return
-				}
-
-				for data := range msg.Data {
-					if _, err := iw.Write(data); err != nil {
-						log.Printf("failed to write data for put %s: %s", msg.Path, err)
-						return
-					}
-				}
-			}
-		}
-	})
-
-	return http.ListenAndServe("127.0.0.1:8090", mux)
-}
-
-func runSshServer(brokers *sync.Map) error {
+func runSshServer(brokers *common.SessionManager) error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 			// nothing for now
@@ -114,7 +55,7 @@ func runSshServer(brokers *sync.Map) error {
 
 			brokers.Store(sessionID, broker.NewInMemoryBroker())
 
-			return fmt.Sprintf("http://127.0.0.1:8090/%s/\n", sessionID)
+			return fmt.Sprintf("http://127.0.0.1:8090/%s\n", sessionID)
 		},
 	}
 
@@ -147,7 +88,7 @@ func runSshServer(brokers *sync.Map) error {
 	}
 }
 
-func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, brokers *sync.Map) {
+func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, brokers *common.SessionManager) {
 	shConn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
 		log.Printf("Failed to handshake: %v", err)
@@ -178,7 +119,7 @@ func handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig, brokers *
 		}
 
 		// block here as we don't want to handle multiple sessions concurrently
-		handleSession(channel, requests, b.(broker.Broker))
+		handleSession(channel, requests, b)
 
 		// we are done with this broker, it should never be used again
 		brokers.Delete(sessionID)
