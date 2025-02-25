@@ -10,23 +10,23 @@ import (
 )
 
 type Server struct {
-	sm             *common.SessionManager
-	listenAddr     string
-	httpListenAddr string
-	privateKey     ssh.Signer
+	sm         *common.SessionManager
+	listenAddr string
+	httpURL    string
+	privateKey ssh.Signer
 }
 
-func NewServer(sm *common.SessionManager, listenAddr, httpListenAddr string, privateKeyBytes []byte) (*Server, error) {
+func NewServer(sm *common.SessionManager, listenAddr, httpURL string, privateKeyBytes []byte) (*Server, error) {
 	key, err := ssh.ParsePrivateKey(privateKeyBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Server{
-		sm:             sm,
-		listenAddr:     listenAddr,
-		httpListenAddr: httpListenAddr,
-		privateKey:     key,
+		sm:         sm,
+		listenAddr: listenAddr,
+		httpURL:    httpURL,
+		privateKey: key,
 	}, nil
 }
 
@@ -34,7 +34,7 @@ func (s *Server) ListenAndServe() error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback:  passwordCallback,
 		PublicKeyCallback: publicKeyCallback,
-		BannerCallback:    bannerCallback(s.sm, s.httpListenAddr),
+		BannerCallback:    bannerCallback(s.sm, s.httpURL),
 	}
 
 	cfg.AddHostKey(s.privateKey)

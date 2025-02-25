@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/danutavadanei/portl/common"
+	"github.com/danutavadanei/portl/config"
 	"github.com/danutavadanei/portl/http"
 	"github.com/danutavadanei/portl/ssh"
 	"log"
@@ -14,16 +15,18 @@ func main() {
 	sigChannel := make(chan os.Signal)
 	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 
+	cfg := config.NewConfig()
+
 	brokers := common.NewSessionManager()
 
-	httpSrv := http.NewServer(brokers, "127.0.0.1:8090")
+	httpSrv := http.NewServer(brokers, cfg.HttpListenAddr)
 
-	bytes, err := os.ReadFile("./keys/ssh.pem")
+	bytes, err := os.ReadFile(cfg.SshPrivateKeyPath)
 	if err != nil {
 		log.Fatalf("Failed to read SSH private key: %v", err)
 	}
 
-	sshServ, err := ssh.NewServer(brokers, "127.0.0.1:2222", "127.0.0.1:8090", bytes)
+	sshServ, err := ssh.NewServer(brokers, cfg.SshListenAddr, cfg.HttpBaseURL, bytes)
 	if err != nil {
 		log.Fatalf("Failed to create SSH server: %v", err)
 	}

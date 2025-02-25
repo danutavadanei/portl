@@ -1,0 +1,13 @@
+services:
+  portl:
+    image: ghcr.io/danutavadanei/portl:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "22:22"
+    volumes:
+      - ./ssh_host_rsa_key:/ssh_host_rsa_key
+    environment:
+      - SSH_LISTEN_ADDR=0.0.0.0:22
+      - SSH_PRIVATE_KEY_PATH=/ssh_host_rsa_key
+      - HTTP_LISTEN_ADDR=0.0.0.0:8080
+      - HTTP_BASE_URL=https://portl.znd.ro

@@ -14,12 +14,12 @@ func publicKeyCallback(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissio
 	return nil, nil
 }
 
-func bannerCallback(sm *common.SessionManager, httpListenAddr string) func(conn ssh.ConnMetadata) string {
+func bannerCallback(sm *common.SessionManager, httpURL string) func(conn ssh.ConnMetadata) string {
 	return func(conn ssh.ConnMetadata) string {
 		sessionID := hashSessionID(conn)
 
 		sm.Store(sessionID, broker.NewInMemoryBroker())
 
-		return fmt.Sprintf("http://%s/%s\n", httpListenAddr, sessionID)
+		return fmt.Sprintf("%s/%s\n", httpURL, sessionID)
 	}
 }

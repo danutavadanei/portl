@@ -6,5 +6,5 @@ todos:
 - [x] gzip the files on the fly before sending them
 - [ ] add logging
 - [ ] add tests
-- [ ] add a configuration procedure
+- [x] add a configuration procedure
 - [ ] create a over the network message broker for horizontal scaling
