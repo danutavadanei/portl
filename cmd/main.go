@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	sigChannel := make(chan os.Signal)
+	sigChannel := make(chan os.Signal, 1)
 	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 
 	logger, err := common.NewLogger("info")
