@@ -5,14 +5,9 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func NewLogger(level string) (*zap.Logger, error) {
-	var zapLevel zapcore.Level
-	if err := zapLevel.UnmarshalText([]byte(level)); err != nil {
-		return nil, err
-	}
-
+func NewLogger(level zapcore.Level) (*zap.Logger, error) {
 	config := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zapLevel),
+		Level:            zap.NewAtomicLevelAt(level),
 		Development:      false,
 		Encoding:         "json",
 		EncoderConfig:    zap.NewProductionEncoderConfig(),

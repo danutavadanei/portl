@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -12,17 +13,26 @@ import (
 	"github.com/danutavadanei/portl/ssh"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
+	debug := flag.Bool("debug", false, "Enable debug logging")
+	flag.Parse()
 
-	logger, err := common.NewLogger("info")
+	logLevel := zapcore.InfoLevel
+	if *debug {
+		logLevel = zapcore.DebugLevel
+	}
+
+	logger, err := common.NewLogger(logLevel)
 	if err != nil {
-		log.Fatalf("Failed to create logger: %v", err)
+		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer logger.Sync()
+
+	sigChannel := make(chan os.Signal, 1)
+	signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 
 	cfg := config.NewConfig()
 
