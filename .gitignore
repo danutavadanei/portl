@@ -26,3 +26,4 @@ go.work.sum
 
 keys/
 .idea/
+.vscode/

@@ -2,7 +2,7 @@ build:
 	go build -o bin/main main.go
 
 run:
-	go run cmd/main.go
+	go run cmd/main.go --debug
 
 docker-build:
 	docker build -t ghcr.io/danutavadanei/portl .
