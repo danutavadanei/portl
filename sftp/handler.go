@@ -2,24 +2,32 @@ package sftp
 
 import (
 	"errors"
+	"io"
+	"path"
+
 	"github.com/danutavadanei/portl/broker"
 	"github.com/pkg/sftp"
-	"io"
-	"log"
-	"path"
+	"go.uber.org/zap"
 )
 
 type Handler struct {
+	logger     *zap.Logger
 	mb         broker.Broker
 	pathPrefix string
 }
 
-func NewHandler(mb broker.Broker) *Handler {
-	return &Handler{mb: mb}
+func NewHandler(logger *zap.Logger, mb broker.Broker) *Handler {
+	return &Handler{
+		logger: logger,
+		mb:     mb,
+	}
 }
 
 func (sh *Handler) Filewrite(req *sftp.Request) (io.WriterAt, error) {
-	log.Printf("Filewrite: Received command for path: %s (method=%s)", req.Filepath, req.Method)
+	sh.logger.Debug("Filewrite: Received command for path",
+		zap.String("path", req.Filepath),
+		zap.String("method", req.Method),
+	)
 
 	if req.Method != "Put" {
 		return nil, nil
@@ -52,7 +60,10 @@ func (sh *Handler) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
 }
 
 func (sh *Handler) Filecmd(req *sftp.Request) error {
-	log.Printf("Filecmd: Received command for path: %s (method=%s)", req.Filepath, req.Method)
+	sh.logger.Debug("Filecmd: Received command for path",
+		zap.String("path", req.Filepath),
+		zap.String("method", req.Method),
+	)
 
 	if req.Method == "Mkdir" {
 		p := sh.normalizePath(req.Filepath)

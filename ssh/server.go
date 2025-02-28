@@ -3,26 +3,29 @@ package ssh
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/danutavadanei/portl/common"
-	"golang.org/x/crypto/ssh"
-	"log"
 	"net"
+
+	"github.com/danutavadanei/portl/common"
+	"go.uber.org/zap"
+	"golang.org/x/crypto/ssh"
 )
 
 type Server struct {
+	logger     *zap.Logger
 	sm         *common.SessionManager
 	listenAddr string
 	httpURL    string
 	privateKey ssh.Signer
 }
 
-func NewServer(sm *common.SessionManager, listenAddr, httpURL string, privateKeyBytes []byte) (*Server, error) {
+func NewServer(logger *zap.Logger, sm *common.SessionManager, listenAddr, httpURL string, privateKeyBytes []byte) (*Server, error) {
 	key, err := ssh.ParsePrivateKey(privateKeyBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Server{
+		logger:     logger,
 		sm:         sm,
 		listenAddr: listenAddr,
 		httpURL:    httpURL,
@@ -44,12 +47,16 @@ func (s *Server) ListenAndServe() error {
 		return fmt.Errorf("failed to listen on %s: %v", s.listenAddr, err)
 	}
 
-	log.Printf("SSH Server listening on %s", s.listenAddr)
+	s.logger.Info("SSH Server listening",
+		zap.String("address", s.listenAddr),
+	)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Failed to accept incoming connection: %v", err)
+			s.logger.Error("Failed to accept incoming connection",
+				zap.Error(err),
+			)
 			continue
 		}
 		go s.handleIncomingSshConnection(conn, cfg)

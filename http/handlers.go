@@ -3,15 +3,16 @@ package http
 import (
 	"archive/zip"
 	"fmt"
-	"github.com/danutavadanei/portl/broker"
-	"github.com/danutavadanei/portl/common"
 	"io"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/danutavadanei/portl/broker"
+	"github.com/danutavadanei/portl/common"
+	"go.uber.org/zap"
 )
 
-func stream(sm *common.SessionManager) http.HandlerFunc {
+func stream(logger *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
@@ -35,18 +36,25 @@ func stream(sm *common.SessionManager) http.HandlerFunc {
 		for msg := range msgs {
 			switch msg.Type {
 			case broker.Mkdir:
-				log.Printf("Creating directory: %s", msg.Path)
+				logger.Debug("Creating directory",
+					zap.String("path", msg.Path),
+				)
 				header := &zip.FileHeader{
 					Name:     msg.Path + "/",
 					Method:   zip.Store,
 					Modified: time.Now(),
 				}
 				if _, err := zw.CreateHeader(header); err != nil {
-					log.Printf("failed to write zip header for mkdir %s: %s", msg.Path, err)
+					logger.Error("failed to write zip header for mkdir",
+						zap.String("path", msg.Path),
+						zap.Error(err),
+					)
 					return
 				}
 			case broker.Put:
-				log.Printf("Writing file: %s", msg.Path)
+				logger.Debug("Writing file",
+					zap.String("path", msg.Path),
+				)
 				header := &zip.FileHeader{
 					Name:     msg.Path,
 					Method:   zip.Store,
@@ -55,12 +63,18 @@ func stream(sm *common.SessionManager) http.HandlerFunc {
 
 				iw, err := zw.CreateHeader(header)
 				if err != nil {
-					log.Printf("failed to write tar header for put %s: %s", msg.Path, err)
+					logger.Error("failed to write tar header for put",
+						zap.String("path", msg.Path),
+						zap.Error(err),
+					)
 					return
 				}
 
 				if _, err := io.Copy(iw, msg.Data); err != nil {
-					log.Printf("failed to write data for put %s: %s", msg.Path, err)
+					logger.Error("failed to write data for put",
+						zap.String("path", msg.Path),
+						zap.Error(err),
+					)
 					return
 				}
 			}

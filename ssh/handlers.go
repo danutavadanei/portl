@@ -2,19 +2,22 @@ package ssh
 
 import (
 	"fmt"
+	"io"
+	"net"
+
 	"github.com/danutavadanei/portl/broker"
 	sftpext "github.com/danutavadanei/portl/sftp"
 	"github.com/pkg/sftp"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
-	"io"
-	"log"
-	"net"
 )
 
 func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig) {
 	shConn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
-		log.Printf("Failed to handshake: %v", err)
+		s.logger.Error("Failed to handshake",
+			zap.Error(err),
+		)
 		return
 	}
 	defer shConn.Close()
@@ -29,7 +32,9 @@ func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfi
 
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
-			log.Printf("Could not accept channel %v", err)
+			s.logger.Error("Could not accept channel",
+				zap.Error(err),
+			)
 			return
 		}
 
@@ -37,7 +42,7 @@ func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfi
 
 		b, ok := s.sm.Load(sessionID)
 		if !ok {
-			log.Printf("Session ID not found in pipes")
+			s.logger.Error("Session ID not found in pipes")
 			return
 		}
 
@@ -58,9 +63,9 @@ func (s *Server) handleSshSession(channel ssh.Channel, in <-chan *ssh.Request, b
 		case "subsystem":
 			subsystem := parseSubsystem(req.Payload)
 			if subsystem == "sftp" {
-				log.Println("Starting SFTP subsystem")
+				s.logger.Info("Starting SFTP subsystem")
 
-				handler := sftpext.NewHandler(b)
+				handler := sftpext.NewHandler(s.logger, b)
 
 				handlers := sftp.Handlers{
 					FileGet:  handler,
@@ -72,9 +77,11 @@ func (s *Server) handleSshSession(channel ssh.Channel, in <-chan *ssh.Request, b
 				sftpServer := sftp.NewRequestServer(channel, handlers)
 
 				if err := sftpServer.Serve(); err == io.EOF {
-					log.Println("SFTP client exited session.")
+					s.logger.Info("SFTP client exited session.")
 				} else if err != nil {
-					log.Printf("SFTP server completed with error: %v", err)
+					s.logger.Error("SFTP server completed with error",
+						zap.Error(err),
+					)
 				}
 
 				return
