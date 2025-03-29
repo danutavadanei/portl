@@ -2,14 +2,13 @@ package ssh
 
 import (
 	"fmt"
-	"io"
-	"net"
-
 	"github.com/danutavadanei/portl/broker"
 	sftpext "github.com/danutavadanei/portl/sftp"
 	"github.com/pkg/sftp"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
+	"io"
+	"net"
 )
 
 func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig) {
@@ -32,9 +31,7 @@ func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfi
 
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
-			s.logger.Error("Could not accept channel",
-				zap.Error(err),
-			)
+			s.logger.Error("Could not accept channel", zap.Error(err))
 			return
 		}
 
@@ -54,44 +51,40 @@ func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfi
 	}
 }
 
-func (s *Server) handleSshSession(channel ssh.Channel, in <-chan *ssh.Request, b broker.Broker) {
-	defer channel.Close()
+func (s *Server) handleSshSession(channel ssh.Channel, requests <-chan *ssh.Request, b broker.Broker) {
 	defer b.Close()
 
-	for req := range in {
-		switch req.Type {
-		case "subsystem":
-			subsystem := parseSubsystem(req.Payload)
-			if subsystem == "sftp" {
-				s.logger.Info("Starting SFTP subsystem")
-
-				handler := sftpext.NewHandler(s.logger, b)
-
-				handlers := sftp.Handlers{
-					FileGet:  handler,
-					FilePut:  handler,
-					FileCmd:  handler,
-					FileList: handler,
+	go func(in <-chan *ssh.Request) {
+		for req := range in {
+			ok := false
+			switch req.Type {
+			case "subsystem":
+				if string(req.Payload[4:]) == "sftp" {
+					ok = true
 				}
-
-				sftpServer := sftp.NewRequestServer(channel, handlers)
-
-				if err := sftpServer.Serve(); err == io.EOF {
-					s.logger.Info("SFTP client exited session.")
-				} else if err != nil {
-					s.logger.Error("SFTP server completed with error",
-						zap.Error(err),
-					)
-				}
-
-				return
 			}
-			// If not "sftp", reject
-			req.Reply(false, nil)
-
-		default:
-			// Reject all other request types
-			req.Reply(false, nil)
+			req.Reply(ok, nil)
 		}
+	}(requests)
+
+	handler := sftpext.NewHandler(s.logger, b)
+
+	handlers := sftp.Handlers{
+		FileGet:  handler,
+		FilePut:  handler,
+		FileCmd:  handler,
+		FileList: handler,
 	}
+
+	sftpServer := sftp.NewRequestServer(channel, handlers)
+
+	if err := sftpServer.Serve(); err == io.EOF {
+		s.logger.Info("sftp client exited session.")
+	} else if err != nil {
+		s.logger.Error("sftp server completed with error",
+			zap.Error(err),
+		)
+	}
+
+	sftpServer.Close()
 }

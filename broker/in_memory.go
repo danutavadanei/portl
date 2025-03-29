@@ -57,8 +57,10 @@ func (b *InMemoryBroker) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	close(b.consumerChan)
-	b.consumerChan = nil
+	if b.consumerChan != nil {
+		close(b.consumerChan)
+		b.consumerChan = nil
+	}
 
 	return nil
 }

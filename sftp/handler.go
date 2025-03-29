@@ -43,7 +43,7 @@ func (sh *Handler) Filewrite(req *sftp.Request) (io.WriterAt, error) {
 		return nil, err
 	}
 
-	return &writerAt{pw: pw}, nil
+	return newWriterAt(pw), nil
 }
 
 func (sh *Handler) Fileread(*sftp.Request) (io.ReaderAt, error) {
