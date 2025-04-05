@@ -1,6 +1,8 @@
 package http
 
 import (
+	"github.com/danutavadanei/portl/static"
+	"html/template"
 	"net/http"
 
 	"github.com/danutavadanei/portl/common"
@@ -28,7 +30,34 @@ func (s *Server) ListenAndServe() error {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/{id}", stream(s.logger, s.sm))
+	downloadPage, err := template.ParseFS(static.Templates, "download.html")
+	if err != nil {
+		return err
+	}
+	notFoundPage, err := template.ParseFS(static.Templates, "404.html")
+	if err != nil {
+		return err
+	}
+
+	mux.HandleFunc("GET /404", func(w http.ResponseWriter, r *http.Request) {
+		if err := notFoundPage.Execute(w, nil); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("POST /404", func(w http.ResponseWriter, r *http.Request) {
+		if err := notFoundPage.Execute(w, nil); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("GET /{id}", func(w http.ResponseWriter, _ *http.Request) {
+		if err := downloadPage.Execute(w, nil); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("POST /{id}", stream(s.logger, s.sm))
 
 	return http.ListenAndServe(s.listenAddr, mux)
 }

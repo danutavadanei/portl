@@ -18,7 +18,7 @@ func stream(logger *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
 
 		b, ok := sm.Load(id)
 		if !ok {
-			http.Error(w, "Session ID not found", http.StatusNotFound)
+			http.Redirect(w, r, "/404", http.StatusFound)
 			return
 		}
 
