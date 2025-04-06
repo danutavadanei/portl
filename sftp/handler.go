@@ -53,7 +53,7 @@ func (sh *Handler) Fileread(*sftp.Request) (io.ReaderAt, error) {
 func (sh *Handler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 	switch r.Method {
 	case "Stat":
-		return listerat{fakeDir{}}, nil
+		return listerat{}, nil
 	}
 
 	return nil, errors.New("unsupported")
