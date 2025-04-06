@@ -1,51 +1,24 @@
 # Portl
 
-Portl is a lightweight SSH/SFTP server that provides a secure way to transfer files through an HTTP interface. It acts as a bridge between SSH/SFTP clients and HTTP endpoints, making it easy to integrate file transfer capabilities into web applications.
+*portl* is a lightweight peer-to-peer file transfer tool written in Go, designed for secure and efficient file sharing without persistent storage.
 
-## Features
+Using `scp` as the uploader and an HTTP client as the downloader, portl creates a seamless tunnel between two peers through a central server. Files are streamed directly from the uploader to the downloader and delivered as a .zip archive — ensuring minimal resource usage and no intermediate storage.
 
-- SSH/SFTP server support
-- HTTP interface for file operations
-- Secure file transfer capabilities
-- JSON-structured logging
-- Configurable log levels
+## Key Features
+- Fast and secure file transfer
+- No files stored on the server
+- Files delivered as a .zip archive
+- Uses scp and HTTP for simplicity
+- Ideal for direct peer-to-peer sharing via a relay server
 
-## Prerequisites
-
-- Go 1.23 or later
-- SSH private key for server authentication
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/danutavadanei/portl.git
-cd portl
-```
-
-2. Build the project:
-```bash
-go build -o portl ./cmd/main.go
-```
-
-## Usage
-
-1. Generate an SSH private key if you don't have one:
-```bash
-ssh-keygen -t rsa -b 4096 -f keys/id_rsa
-```
-
-2. Run the server:
-```bash
-./portl
-```
-
-Optional flags:
-- `-debug`: Enable debug level logging
+## How It Works
+1. Uploader sends files via scp to the server.
+2. Server tunnels the data to the downloader without storing it.
+3. Downloader receives a zipped stream over HTTP.
 
 ## Demo Server
 
-A demo server is available at `portl.znd.ro`. You can use it to test file transfers:
+A demo server is available at `portl.znd.ro`. You can use it for sharing files
 
 ### Single File Transfer
 ```bash
@@ -57,6 +30,32 @@ scp /path/to/my/file portl.znd.ro:/
 scp -r /path/to/my/directory portl.znd.ro:/
 ```
 
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/danutavadanei/portl.git
+cd portl
+```
+
+2. Build the project:
+```bash
+make build
+```
+
+## Usage
+
+1. Generate an SSH private key if you don't have one:
+```bash
+ssh-keygen -t rsa -b 4096 -f keys/id_rsa
+```
+
+2. Run the server:
+```bash
+./bin/portl
+```
+
+
 ## Configuration
 
 The server can be configured through environment variables or a config file:
@@ -65,6 +64,7 @@ The server can be configured through environment variables or a config file:
 - `HTTP_LISTEN_ADDR`: HTTP server listen address (default: ":8080")
 - `HTTP_BASE_URL`: Base URL for HTTP endpoints
 - `SSH_PRIVATE_KEY_PATH`: Path to SSH private key file
+- `DEBUG`: Enable debug logging (default: false)
 
 ## License
 

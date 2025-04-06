@@ -1,5 +1,5 @@
 build:
-	go build -o bin/main main.go
+	go build -o bin/portl main.go
 
 run:
 	go run cmd/main.go --debug
