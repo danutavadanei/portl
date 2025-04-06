@@ -11,3 +11,4 @@ services:
       - SSH_PRIVATE_KEY_PATH=/ssh_host_rsa_key
       - HTTP_LISTEN_ADDR=0.0.0.0:8080
       - HTTP_BASE_URL=https://portl.znd.ro
+      - DEBUG=true

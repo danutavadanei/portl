@@ -17,7 +17,7 @@ func NewConfig() *Config {
 	viper.SetDefault("SSH_PRIVATE_KEY_PATH", "./keys/ssh.pem")
 	viper.SetDefault("HTTP_LISTEN_ADDR", "0.0.0.0:8080")
 	viper.SetDefault("HTTP_BASE_URL", "http://localhost:8080")
-	viper.SetDefault("DEBUG", true)
+	viper.SetDefault("DEBUG", false)
 
 	config := &Config{
 		SshListenAddr:     viper.GetString("SSH_LISTEN_ADDR"),
