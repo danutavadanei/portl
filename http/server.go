@@ -1,35 +1,38 @@
 package http
 
 import (
+	"github.com/danutavadanei/portl/broker"
+	"github.com/danutavadanei/portl/config"
 	"net/http"
 
-	"github.com/danutavadanei/portl/common"
 	"go.uber.org/zap"
 )
 
 type Server struct {
 	logger     *zap.Logger
-	sm         *common.SessionManager
+	store      *broker.Store
 	listenAddr string
 }
 
-func NewServer(logger *zap.Logger, sm *common.SessionManager, listenAddr string) *Server {
+func NewServer(logger *zap.Logger, store *broker.Store, cfg *config.Config) *Server {
 	return &Server{
 		logger:     logger,
-		sm:         sm,
-		listenAddr: listenAddr,
+		store:      store,
+		listenAddr: cfg.HttpListenAddr,
 	}
 }
 
-func (s *Server) ListenAndServe() error {
+func (s *Server) Serve() error {
 	s.logger.Info("Starting HTTP server", zap.String("listen_addr", s.listenAddr))
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /404", handle404(s.logger))
-	mux.HandleFunc("POST /404", handle404(s.logger))
-	mux.HandleFunc("GET /{id}", handleDownloadPage(s.logger, s.sm))
-	mux.HandleFunc("POST /{id}", handleDownload(s.logger, s.sm))
+	handler404 := s.handle404()
+
+	mux.HandleFunc("GET /404", handler404)
+	mux.HandleFunc("POST /404", handler404)
+	mux.HandleFunc("GET /{id}", s.handleDownloadPage())
+	mux.HandleFunc("POST /{id}", s.handleDownload)
 
 	return http.ListenAndServe(s.listenAddr, mux)
 }

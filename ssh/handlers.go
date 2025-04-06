@@ -14,9 +14,7 @@ import (
 func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfig) {
 	shConn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
-		s.logger.Error("Failed to handshake",
-			zap.Error(err),
-		)
+		s.logger.Error("failed to handshake", zap.Error(err))
 		return
 	}
 	defer shConn.Close()
@@ -31,23 +29,21 @@ func (s *Server) handleIncomingSshConnection(conn net.Conn, cfg *ssh.ServerConfi
 
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
-			s.logger.Error("Could not accept channel", zap.Error(err))
+			s.logger.Error("could not accept channel", zap.Error(err))
 			return
 		}
 
 		sessionID := hashSessionID(shConn)
 
-		b, ok := s.sm.Load(sessionID)
+		b, ok := s.store.Load(sessionID)
 		if !ok {
-			s.logger.Error("Session ID not found in pipes")
+			s.logger.Error("session ID not found")
 			return
 		}
 
-		// block here as we don't want to handle multiple sessions concurrently
 		s.handleSshSession(channel, requests, b)
 
-		// we are done with this broker, it should never be used again
-		s.sm.Delete(sessionID)
+		s.store.Delete(sessionID)
 	}
 }
 
@@ -81,9 +77,7 @@ func (s *Server) handleSshSession(channel ssh.Channel, requests <-chan *ssh.Requ
 	if err := sftpServer.Serve(); err == io.EOF {
 		s.logger.Info("sftp client exited session.")
 	} else if err != nil {
-		s.logger.Error("sftp server completed with error",
-			zap.Error(err),
-		)
+		s.logger.Error("sftp server completed with error", zap.Error(err))
 	}
 
 	sftpServer.Close()

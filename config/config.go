@@ -7,6 +7,7 @@ type Config struct {
 	SshPrivateKeyPath string
 	HttpListenAddr    string
 	HttpBaseURL       string
+	Debug             bool
 }
 
 func NewConfig() *Config {
@@ -16,12 +17,14 @@ func NewConfig() *Config {
 	viper.SetDefault("SSH_PRIVATE_KEY_PATH", "./keys/ssh.pem")
 	viper.SetDefault("HTTP_LISTEN_ADDR", "0.0.0.0:8080")
 	viper.SetDefault("HTTP_BASE_URL", "http://localhost:8080")
+	viper.SetDefault("DEBUG", false)
 
 	config := &Config{
 		SshListenAddr:     viper.GetString("SSH_LISTEN_ADDR"),
 		SshPrivateKeyPath: viper.GetString("SSH_PRIVATE_KEY_PATH"),
 		HttpListenAddr:    viper.GetString("HTTP_LISTEN_ADDR"),
 		HttpBaseURL:       viper.GetString("HTTP_BASE_URL"),
+		Debug:             viper.GetBool("DEBUG"),
 	}
 
 	return config

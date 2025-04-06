@@ -12,14 +12,14 @@ import (
 
 type Handler struct {
 	logger     *zap.Logger
-	mb         broker.Broker
+	broker     broker.Broker
 	pathPrefix string
 }
 
 func NewHandler(logger *zap.Logger, mb broker.Broker) *Handler {
 	return &Handler{
 		logger: logger,
-		mb:     mb,
+		broker: mb,
 	}
 }
 
@@ -35,7 +35,7 @@ func (sh *Handler) Filewrite(req *sftp.Request) (io.WriterAt, error) {
 
 	pr, pw := io.Pipe()
 
-	if err := sh.mb.Publish(broker.Message{
+	if err := sh.broker.Publish(broker.Message{
 		Type: broker.Put,
 		Path: sh.normalizePath(req.Filepath),
 		Data: pr,
@@ -50,8 +50,8 @@ func (sh *Handler) Fileread(*sftp.Request) (io.ReaderAt, error) {
 	return nil, nil
 }
 
-func (sh *Handler) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
-	switch request.Method {
+func (sh *Handler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
+	switch r.Method {
 	case "Stat":
 		return listerat{fakeDir{}}, nil
 	}
@@ -59,19 +59,19 @@ func (sh *Handler) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
 	return nil, errors.New("unsupported")
 }
 
-func (sh *Handler) Filecmd(req *sftp.Request) error {
+func (sh *Handler) Filecmd(r *sftp.Request) error {
 	sh.logger.Debug("Filecmd: Received command for path",
-		zap.String("path", req.Filepath),
-		zap.String("method", req.Method),
+		zap.String("path", r.Filepath),
+		zap.String("method", r.Method),
 	)
 
-	if req.Method == "Mkdir" {
-		p := sh.normalizePath(req.Filepath)
+	if r.Method == "Mkdir" {
+		p := sh.normalizePath(r.Filepath)
 		if p == "" {
 			return nil
 		}
 
-		if err := sh.mb.Publish(broker.Message{
+		if err := sh.broker.Publish(broker.Message{
 			Type: broker.Mkdir,
 			Path: p,
 		}); err != nil {

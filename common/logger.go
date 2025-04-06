@@ -1,13 +1,19 @@
 package common
 
 import (
+	"github.com/danutavadanei/portl/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-func NewLogger(level zapcore.Level) (*zap.Logger, error) {
-	config := zap.Config{
-		Level:            zap.NewAtomicLevelAt(level),
+func NewLogger(cfg *config.Config) (*zap.Logger, error) {
+	logLevel := zapcore.InfoLevel
+	if cfg.Debug {
+		logLevel = zapcore.DebugLevel
+	}
+
+	zapCfg := zap.Config{
+		Level:            zap.NewAtomicLevelAt(logLevel),
 		Development:      false,
 		Encoding:         "json",
 		EncoderConfig:    zap.NewProductionEncoderConfig(),
@@ -15,7 +21,7 @@ func NewLogger(level zapcore.Level) (*zap.Logger, error) {
 		ErrorOutputPaths: []string{"stderr"},
 	}
 
-	logger, err := config.Build()
+	logger, err := zapCfg.Build()
 	if err != nil {
 		return nil, err
 	}

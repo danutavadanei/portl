@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-type InMemoryBroker struct {
+type InMemory struct {
 	mu             sync.Mutex
 	queue          []Message
 	consumerChan   chan Message
@@ -13,8 +13,8 @@ type InMemoryBroker struct {
 	waitChan       chan struct{}
 }
 
-func NewInMemoryBroker() *InMemoryBroker {
-	return &InMemoryBroker{
+func NewInMemory() *InMemory {
+	return &InMemory{
 		queue:          make([]Message, 0),
 		consumerChan:   nil,
 		consumerActive: false,
@@ -22,7 +22,7 @@ func NewInMemoryBroker() *InMemoryBroker {
 	}
 }
 
-func (b *InMemoryBroker) Publish(msg Message) error {
+func (b *InMemory) Publish(msg Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -35,7 +35,7 @@ func (b *InMemoryBroker) Publish(msg Message) error {
 	return nil
 }
 
-func (b *InMemoryBroker) Subscribe() (<-chan Message, error) {
+func (b *InMemory) Subscribe() (<-chan Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -56,7 +56,7 @@ func (b *InMemoryBroker) Subscribe() (<-chan Message, error) {
 	return b.consumerChan, nil
 }
 
-func (b *InMemoryBroker) Close() error {
+func (b *InMemory) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -68,6 +68,6 @@ func (b *InMemoryBroker) Close() error {
 	return nil
 }
 
-func (b *InMemoryBroker) WaitForSubscription() <-chan struct{} {
+func (b *InMemory) WaitForSubscription() <-chan struct{} {
 	return b.waitChan
 }
