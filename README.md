@@ -16,9 +16,9 @@ Using `scp` as the uploader and an HTTP client as the downloader, portl creates 
 2. Server tunnels the data to the downloader without storing it.
 3. Downloader receives a zipped stream over HTTP.
 
-## Demo Server
+## Live Server
 
-A demo server is available at `portl.znd.ro`. You can use it for sharing files
+A instance of the server is available at `portl.znd.ro`. You can use it for sharing files with other peers.
 
 ### Single File Transfer
 ```bash
