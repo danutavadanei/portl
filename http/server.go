@@ -1,8 +1,6 @@
 package http
 
 import (
-	"github.com/danutavadanei/portl/static"
-	"html/template"
 	"net/http"
 
 	"github.com/danutavadanei/portl/common"
@@ -24,40 +22,14 @@ func NewServer(logger *zap.Logger, sm *common.SessionManager, listenAddr string)
 }
 
 func (s *Server) ListenAndServe() error {
-	s.logger.Info("Starting HTTP server",
-		zap.String("listen_addr", s.listenAddr),
-	)
+	s.logger.Info("Starting HTTP server", zap.String("listen_addr", s.listenAddr))
 
 	mux := http.NewServeMux()
 
-	downloadPage, err := template.ParseFS(static.Templates, "download.html")
-	if err != nil {
-		return err
-	}
-	notFoundPage, err := template.ParseFS(static.Templates, "404.html")
-	if err != nil {
-		return err
-	}
-
-	mux.HandleFunc("GET /404", func(w http.ResponseWriter, r *http.Request) {
-		if err := notFoundPage.Execute(w, nil); err != nil {
-			http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		}
-	})
-
-	mux.HandleFunc("POST /404", func(w http.ResponseWriter, r *http.Request) {
-		if err := notFoundPage.Execute(w, nil); err != nil {
-			http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		}
-	})
-
-	mux.HandleFunc("GET /{id}", func(w http.ResponseWriter, _ *http.Request) {
-		if err := downloadPage.Execute(w, nil); err != nil {
-			http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		}
-	})
-
-	mux.HandleFunc("POST /{id}", stream(s.logger, s.sm))
+	mux.HandleFunc("GET /404", handle404(s.logger))
+	mux.HandleFunc("POST /404", handle404(s.logger))
+	mux.HandleFunc("GET /{id}", handleDownloadPage(s.logger, s.sm))
+	mux.HandleFunc("POST /{id}", handleDownload(s.logger, s.sm))
 
 	return http.ListenAndServe(s.listenAddr, mux)
 }

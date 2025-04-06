@@ -3,6 +3,8 @@ package http
 import (
 	"archive/zip"
 	"fmt"
+	"github.com/danutavadanei/portl/static"
+	"html/template"
 	"io"
 	"net/http"
 	"time"
@@ -12,7 +14,40 @@ import (
 	"go.uber.org/zap"
 )
 
-func stream(logger *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
+func handle404(l *zap.Logger) http.HandlerFunc {
+	notFoundPage, err := template.ParseFS(static.Templates, "404.html")
+	if err != nil {
+		l.Error("failed to parse 404 template", zap.Error(err))
+		return nil
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := notFoundPage.Execute(w, nil); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		}
+	}
+}
+
+func handleDownloadPage(l *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
+	downloadPage, err := template.ParseFS(static.Templates, "download.html")
+	if err != nil {
+		l.Error("failed to parse download template", zap.Error(err))
+		return nil
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := sm.Load(r.PathValue("id")); !ok {
+			http.Redirect(w, r, "/404", http.StatusFound)
+			return
+		}
+
+		if err := downloadPage.Execute(w, nil); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		}
+	}
+}
+
+func handleDownload(l *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
@@ -24,7 +59,9 @@ func stream(logger *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
 
 		msgs, err := b.Subscribe()
 		if err != nil {
-			http.Error(w, "Failed to subscribe to broker", http.StatusInternalServerError)
+			l.Error("failed to subscribe to broker", zap.Error(err))
+			http.Redirect(w, r, "/404", http.StatusFound)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/zip")
@@ -36,45 +73,36 @@ func stream(logger *zap.Logger, sm *common.SessionManager) http.HandlerFunc {
 		for msg := range msgs {
 			switch msg.Type {
 			case broker.Mkdir:
-				logger.Debug("Creating directory",
-					zap.String("path", msg.Path),
-				)
+				l.Debug("Creating directory", zap.String("path", msg.Path))
+
 				header := &zip.FileHeader{
 					Name:     msg.Path + "/",
 					Method:   zip.Store,
 					Modified: time.Now(),
 				}
 				if _, err := zw.CreateHeader(header); err != nil {
-					logger.Error("failed to write zip header for mkdir",
+					l.Error("failed to write zip header for mkdir",
 						zap.String("path", msg.Path),
 						zap.Error(err),
 					)
 					return
 				}
 			case broker.Put:
-				logger.Debug("Writing file",
-					zap.String("path", msg.Path),
-				)
+				l.Debug("writing file", zap.String("path", msg.Path))
+
 				header := &zip.FileHeader{
 					Name:     msg.Path,
 					Method:   zip.Store,
 					Modified: time.Now(),
 				}
-
 				iw, err := zw.CreateHeader(header)
 				if err != nil {
-					logger.Error("failed to write tar header for put",
-						zap.String("path", msg.Path),
-						zap.Error(err),
-					)
+					l.Error("failed to write tar header for put", zap.String("path", msg.Path), zap.Error(err))
 					return
 				}
 
 				if _, err := io.Copy(iw, msg.Data); err != nil {
-					logger.Error("failed to write data for put",
-						zap.String("path", msg.Path),
-						zap.Error(err),
-					)
+					l.Error("failed to write data for put", zap.String("path", msg.Path), zap.Error(err))
 					return
 				}
 			}

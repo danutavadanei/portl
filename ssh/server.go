@@ -37,7 +37,7 @@ func (s *Server) ListenAndServe() error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback:  passwordCallback,
 		PublicKeyCallback: publicKeyCallback,
-		BannerCallback:    bannerCallback(s.sm, s.httpURL),
+		BannerCallback:    bannerCallback(s.logger, s.sm, s.httpURL),
 	}
 
 	cfg.AddHostKey(s.privateKey)

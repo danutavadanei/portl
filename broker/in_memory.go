@@ -10,6 +10,7 @@ type InMemoryBroker struct {
 	queue          []Message
 	consumerChan   chan Message
 	consumerActive bool
+	waitChan       chan struct{}
 }
 
 func NewInMemoryBroker() *InMemoryBroker {
@@ -17,6 +18,7 @@ func NewInMemoryBroker() *InMemoryBroker {
 		queue:          make([]Message, 0),
 		consumerChan:   nil,
 		consumerActive: false,
+		waitChan:       make(chan struct{}),
 	}
 }
 
@@ -43,6 +45,7 @@ func (b *InMemoryBroker) Subscribe() (<-chan Message, error) {
 
 	b.consumerChan = make(chan Message, len(b.queue)+1)
 	b.consumerActive = true
+	b.waitChan <- struct{}{}
 
 	for _, msg := range b.queue {
 		b.consumerChan <- msg
@@ -63,4 +66,8 @@ func (b *InMemoryBroker) Close() error {
 	}
 
 	return nil
+}
+
+func (b *InMemoryBroker) WaitForSubscription() <-chan struct{} {
+	return b.waitChan
 }

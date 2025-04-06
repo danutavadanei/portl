@@ -19,4 +19,5 @@ type Broker interface {
 	Publish(msg Message) error
 	Subscribe() (<-chan Message, error)
 	Close() error
+	WaitForSubscription() <-chan struct{}
 }

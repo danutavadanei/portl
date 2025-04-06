@@ -2,25 +2,50 @@ package ssh
 
 import (
 	"fmt"
-
 	"github.com/danutavadanei/portl/broker"
+	"go.uber.org/zap"
+	"time"
+
 	"github.com/danutavadanei/portl/common"
 	"golang.org/x/crypto/ssh"
 )
 
-func passwordCallback(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+func passwordCallback(_ ssh.ConnMetadata, _ []byte) (*ssh.Permissions, error) {
 	return nil, nil
 }
-func publicKeyCallback(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+func publicKeyCallback(_ ssh.ConnMetadata, _ ssh.PublicKey) (*ssh.Permissions, error) {
 	return nil, nil
 }
 
-func bannerCallback(sm *common.SessionManager, httpURL string) func(conn ssh.ConnMetadata) string {
+func bannerCallback(l *zap.Logger, sm *common.SessionManager, httpURL string) func(conn ssh.ConnMetadata) string {
 	return func(conn ssh.ConnMetadata) string {
 		sessionID := hashSessionID(conn)
+		b := broker.NewInMemoryBroker()
+		sm.Store(sessionID, b)
 
-		sm.Store(sessionID, broker.NewInMemoryBroker())
+		err := conn.(ssh.ServerPreAuthConn).SendAuthBanner(fmt.Sprintf("Share the download link:\n%s/%s\nThis link will be active for 5 minutes.\n", httpURL, sessionID))
+		if err != nil {
+			l.Error("failed to send download auth banner", zap.Error(err))
+			return ""
+		}
 
-		return fmt.Sprintf("%s/%s\n", httpURL, sessionID)
+		subscribedChan := b.WaitForSubscription()
+		tickerChan := time.After(5 * time.Minute)
+
+		for {
+			select {
+			case <-tickerChan:
+				if err = conn.(ssh.ServerPreAuthConn).SendAuthBanner("Your session has expired.\n"); err != nil {
+					l.Error("failed to send expired auth banner", zap.Error(err))
+				}
+
+				if err = conn.(ssh.Conn).Close(); err != nil {
+					l.Error("failed to close connection", zap.Error(err))
+				}
+				return ""
+			case <-subscribedChan:
+				return "Connected to the peer, starting transfer...\n"
+			}
+		}
 	}
 }

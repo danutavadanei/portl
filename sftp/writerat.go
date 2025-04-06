@@ -1,7 +1,6 @@
 package sftp
 
 import (
-	"fmt"
 	"io"
 	"sync"
 )
@@ -13,7 +12,6 @@ type writerAt struct {
 	mu sync.Mutex
 
 	outOfOrderBytes map[int64][]byte
-	maxOutOfOrder   int
 }
 
 func newWriterAt(pw io.WriteCloser) *writerAt {
@@ -53,8 +51,6 @@ func (w *writerAt) WriteAt(p []byte, off int64) (n int, err error) {
 		delete(w.outOfOrderBytes, w.offset-int64(len(chunk)))
 	}
 
-	w.maxOutOfOrder = max(w.maxOutOfOrder, len(w.outOfOrderBytes))
-
 	// Return the length of the chunk just received (p).
 	// Even if it hasn't been flushed yet (because its offset was too high),
 	// from the caller's perspective, we've "accepted" it.
@@ -65,7 +61,6 @@ func (w *writerAt) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	fmt.Printf("Max out of order bytes length in megabytes: %d\n", w.maxOutOfOrder/1024/1024)
 	// If there are any out-of-order bytes left, return an error
 	if len(w.outOfOrderBytes) > 0 {
 		return io.ErrUnexpectedEOF
