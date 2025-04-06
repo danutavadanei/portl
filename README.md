@@ -1,8 +1,7 @@
 # Portl
 
-*portl* is a lightweight peer-to-peer file transfer tool written in Go, designed for secure and efficient file sharing without persistent storage.
-
-Using `scp` as the uploader and an HTTP client as the downloader, portl creates a seamless tunnel between two peers through a central server. Files are streamed directly from the uploader to the downloader and delivered as a .zip archive — ensuring minimal resource usage and no intermediate storage.
+**portl** is a lightweight peer-to-server-to-peer file transfer tool written in Go, designed for secure and efficient file sharing without persisting files on the server.
+Using `scp` as the uploader and an HTTP client as the downloader, **portl** creates a seamless tunnel between two peers through a central server. Files are streamed directly from the uploader to the downloader and delivered as a `.zip` archive — ensuring minimal resource usage and no intermediate storage.
 
 ## Key Features
 - Fast and secure file transfer
